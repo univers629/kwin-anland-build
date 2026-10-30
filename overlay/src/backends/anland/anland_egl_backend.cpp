@@ -171,14 +171,11 @@ bool AnlandEglLayer::importBuffers(int count)
         attrs.width = actual.width();
         attrs.height = actual.height();
         attrs.format = protocol_format_to_drm(fb.format);
-        /* A DRM format modifier carries a 8-bit vendor code in its top byte;
-           anything else is not a modifier and cannot be handed to the
-           importer, which rejects the whole attribute set. Such a buffer is
-           treated as linear, the layout the consumer allocates. */
-        if ((fb.modifier >> 56) == 0 || (fb.modifier >> 56) == 0xff)
-            attrs.modifier = DRM_FORMAT_MOD_LINEAR;
-        else
-            attrs.modifier = fb.modifier;
+        /* The consumer exports a linear buffer and leaves the modifier zero,
+           which is not a modifier the importer can look up: Mesa treats
+           DRM_FORMAT_MOD_INVALID as "unspecified" and falls back to probing
+           the linear layout, while a literal zero is rejected outright. */
+        attrs.modifier = DRM_FORMAT_MOD_INVALID;
         // anland_device_get_fb() returns a caller-owned dup of the dmabuf fd;
         // DmaBufAttributes (and the EGLImage we hand the fd to) takes it over.
         attrs.fd[0] = FileDescriptor(fb.fd);
@@ -221,59 +218,15 @@ bool AnlandEglLayer::importBuffers(int count)
                                << "fdSize" << fdSize
                                << "fdInfo" << fdInfo;
 
-        // EglBackend::importDmaBufAsTexture() always emits the plane modifier
-        // attributes. The kgsl backend of Mesa accepts a dma-buf import without
-        // them and rejects the same import with them, so a linear buffer is
-        // imported through EglDisplay::createImage() with an attribute list
-        // that omits the modifier, then wrapped in the usual EGLImageTexture.
-        KWin::EglDisplay *display = m_backend->eglDisplayObject();
-        EGLImageKHR image = EGL_NO_IMAGE_KHR;
-        if (attrs.modifier == DRM_FORMAT_MOD_LINEAR && display) {
-            /* The importer consumes the descriptor it is given, so it receives
-               a private duplicate and the attributes keep ownership of theirs.
-               fcntl reports whether the source is still open: EGL_BAD_ACCESS
-               comes back for a descriptor that has already been closed. */
-            const int srcFd = attrs.fd[0].get();
-            const int dupFd = fcntl(srcFd, F_DUPFD_CLOEXEC, 0);
-            qCWarning(KWIN_ANLAND) << "linear import of buffer" << i
-                                   << "src fd" << srcFd
-                                   << "open" << (fcntl(srcFd, F_GETFD) >= 0)
-                                   << "dup fd" << dupFd
-                                   << "errno" << errno;
-            if (dupFd >= 0) {
-                const EGLint attribs[] = {
-                    EGL_LINUX_DRM_FOURCC_EXT, static_cast<EGLint>(attrs.format),
-                    EGL_WIDTH, static_cast<EGLint>(attrs.width),
-                    EGL_HEIGHT, static_cast<EGLint>(attrs.height),
-                    EGL_DMA_BUF_PLANE0_FD_EXT, static_cast<EGLint>(dupFd),
-                    EGL_DMA_BUF_PLANE0_OFFSET_EXT, static_cast<EGLint>(attrs.offset[0]),
-                    EGL_DMA_BUF_PLANE0_PITCH_EXT, static_cast<EGLint>(attrs.pitch[0]),
-                    EGL_NONE,
-                };
-                image = display->createImage(EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT,
-                                             nullptr, attribs);
-                close(dupFd);
-            }
-            if (image == EGL_NO_IMAGE_KHR) {
-                qCWarning(KWIN_ANLAND) << "linear import of buffer" << i
-                                       << "failed: 0x" << Qt::hex << eglGetError()
-                                       << "- falling back to the dmabuf path";
-            } else {
-                qCWarning(KWIN_ANLAND) << "linear import of buffer" << i << "succeeded";
-            }
-        }
-
+        /* The importer resolves the modifier itself: an unspecified modifier
+           lets it probe the linear layout, which is what the consumer
+           allocated. */
         std::shared_ptr<GLTexture> texture;
-        if (image != EGL_NO_IMAGE_KHR) {
-            texture = KWin::EGLImageTexture::create(display, image,
-                                                    static_cast<int>(attrs.format), actual, false);
-        } else {
 #ifdef ANLAND_KWIN_68
-            texture = m_backend->openglContext()->importDmaBufAsTexture(attrs);
+        texture = m_backend->openglContext()->importDmaBufAsTexture(attrs);
 #else
-            texture = m_backend->importDmaBufAsTexture(attrs);
+        texture = m_backend->importDmaBufAsTexture(attrs);
 #endif
-        }
         if (!texture) {
             qCWarning(KWIN_ANLAND) << "failed to import dmabuf" << i << "as texture";
             releaseBuffers();
