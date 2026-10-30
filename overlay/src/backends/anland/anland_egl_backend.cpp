@@ -27,6 +27,7 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <sys/stat.h>
 
 #include "opengl/eglimagetexture.h"
 
@@ -187,13 +188,17 @@ bool AnlandEglLayer::importBuffers(int count)
            the values are logged once per buffer to diagnose a rejected import.
            Warning level: the default logging rules print warnings but drop
            info, and a rejected import must be observable without extra setup. */
+        struct stat fdStat;
+        const long fdSize = (fstat(fb.fd, &fdStat) == 0) ? (long)fdStat.st_size : -1;
         qCWarning(KWIN_ANLAND) << "importing buffer" << i
                                << "size" << actual
                                << "format" << Qt::hex << attrs.format
                                << "modifier" << Qt::hex << (unsigned long long)attrs.modifier
                                << "offset" << attrs.offset[0]
                                << "pitch" << attrs.pitch[0]
-                               << "footprint" << fb.stride * fb.height;
+                               << "footprint" << fb.stride * fb.height
+                               << "fd" << fb.fd
+                               << "fdSize" << fdSize;
 
         // EglBackend::importDmaBufAsTexture() always emits the plane modifier
         // attributes. The kgsl backend of Mesa accepts a dma-buf import without
