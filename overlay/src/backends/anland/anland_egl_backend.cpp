@@ -25,6 +25,9 @@
 #include <drm_fourcc.h>
 #include <unistd.h>
 
+#include "opengl/eglimagetexture.h"
+
+#include <EGL/eglext.h>
 #ifndef EGL_PLATFORM_SURFACELESS_MESA
 #define EGL_PLATFORM_SURFACELESS_MESA 0x31DD
 #endif
@@ -163,7 +166,14 @@ bool AnlandEglLayer::importBuffers(int count)
         attrs.width = actual.width();
         attrs.height = actual.height();
         attrs.format = protocol_format_to_drm(fb.format);
-        attrs.modifier = fb.modifier;
+        /* A DRM format modifier carries a 8-bit vendor code in its top byte;
+           anything else is not a modifier and cannot be handed to the
+           importer, which rejects the whole attribute set. Such a buffer is
+           treated as linear, the layout the consumer allocates. */
+        if ((fb.modifier >> 56) == 0 || (fb.modifier >> 56) == 0xff)
+            attrs.modifier = DRM_FORMAT_MOD_LINEAR;
+        else
+            attrs.modifier = fb.modifier;
         // anland_device_get_fb() returns a caller-owned dup of the dmabuf fd;
         // DmaBufAttributes (and the EGLImage we hand the fd to) takes it over.
         attrs.fd[0] = FileDescriptor(fb.fd);
@@ -182,14 +192,37 @@ bool AnlandEglLayer::importBuffers(int count)
                                << "pitch" << attrs.pitch[0]
                                << "footprint" << fb.stride * fb.height;
 
-        // EglBackend::importDmaBufAsTexture() builds the EGLImage and wraps it in
-        // a GLTexture in one step (the 5.27-era manual EGLImageKHR +
-        // EGLImageTexture(...) dance is gone in 6.x).
+        // EglBackend::importDmaBufAsTexture() always emits the plane modifier
+        // attributes. The kgsl backend of Mesa accepts a dma-buf import without
+        // them and rejects the same import with them, so a linear buffer is
+        // imported through EglDisplay::createImage() with an attribute list
+        // that omits the modifier, then wrapped in the usual EGLImageTexture.
+        KWin::EglDisplay *display = m_backend->eglDisplayObject();
+        EGLImageKHR image = EGL_NO_IMAGE_KHR;
+        if (attrs.modifier == DRM_FORMAT_MOD_LINEAR && display) {
+            const EGLint attribs[] = {
+                EGL_LINUX_DRM_FOURCC_EXT, static_cast<EGLint>(attrs.format),
+                EGL_WIDTH, static_cast<EGLint>(attrs.width),
+                EGL_HEIGHT, static_cast<EGLint>(attrs.height),
+                EGL_DMA_BUF_PLANE0_FD_EXT, static_cast<EGLint>(attrs.fd[0].get()),
+                EGL_DMA_BUF_PLANE0_OFFSET_EXT, static_cast<EGLint>(attrs.offset[0]),
+                EGL_DMA_BUF_PLANE0_PITCH_EXT, static_cast<EGLint>(attrs.pitch[0]),
+                EGL_NONE,
+            };
+            image = display->createImage(EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs);
+        }
+
+        std::shared_ptr<GLTexture> texture;
+        if (image != EGL_NO_IMAGE_KHR) {
+            texture = KWin::EGLImageTexture::create(display, image,
+                                                    static_cast<int>(attrs.format), actual, false);
+        } else {
 #ifdef ANLAND_KWIN_68
-        std::shared_ptr<GLTexture> texture = m_backend->openglContext()->importDmaBufAsTexture(attrs);
+            texture = m_backend->openglContext()->importDmaBufAsTexture(attrs);
 #else
-        std::shared_ptr<GLTexture> texture = m_backend->importDmaBufAsTexture(attrs);
+            texture = m_backend->importDmaBufAsTexture(attrs);
 #endif
+        }
         if (!texture) {
             qCWarning(KWIN_ANLAND) << "failed to import dmabuf" << i << "as texture";
             releaseBuffers();
