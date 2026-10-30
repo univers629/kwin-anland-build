@@ -23,7 +23,10 @@
 #include "utils/filedescriptor.h"
 
 #include <drm_fourcc.h>
+#include <fcntl.h>
 #include <unistd.h>
+
+#include <cerrno>
 
 #include "opengl/eglimagetexture.h"
 
@@ -200,16 +203,31 @@ bool AnlandEglLayer::importBuffers(int count)
         KWin::EglDisplay *display = m_backend->eglDisplayObject();
         EGLImageKHR image = EGL_NO_IMAGE_KHR;
         if (attrs.modifier == DRM_FORMAT_MOD_LINEAR && display) {
-            const EGLint attribs[] = {
-                EGL_LINUX_DRM_FOURCC_EXT, static_cast<EGLint>(attrs.format),
-                EGL_WIDTH, static_cast<EGLint>(attrs.width),
-                EGL_HEIGHT, static_cast<EGLint>(attrs.height),
-                EGL_DMA_BUF_PLANE0_FD_EXT, static_cast<EGLint>(attrs.fd[0].get()),
-                EGL_DMA_BUF_PLANE0_OFFSET_EXT, static_cast<EGLint>(attrs.offset[0]),
-                EGL_DMA_BUF_PLANE0_PITCH_EXT, static_cast<EGLint>(attrs.pitch[0]),
-                EGL_NONE,
-            };
-            image = display->createImage(EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs);
+            /* The importer consumes the descriptor it is given, so it receives
+               a private duplicate and the attributes keep ownership of theirs.
+               fcntl reports whether the source is still open: EGL_BAD_ACCESS
+               comes back for a descriptor that has already been closed. */
+            const int srcFd = attrs.fd[0].get();
+            const int dupFd = fcntl(srcFd, F_DUPFD_CLOEXEC, 0);
+            qCWarning(KWIN_ANLAND) << "linear import of buffer" << i
+                                   << "src fd" << srcFd
+                                   << "open" << (fcntl(srcFd, F_GETFD) >= 0)
+                                   << "dup fd" << dupFd
+                                   << "errno" << errno;
+            if (dupFd >= 0) {
+                const EGLint attribs[] = {
+                    EGL_LINUX_DRM_FOURCC_EXT, static_cast<EGLint>(attrs.format),
+                    EGL_WIDTH, static_cast<EGLint>(attrs.width),
+                    EGL_HEIGHT, static_cast<EGLint>(attrs.height),
+                    EGL_DMA_BUF_PLANE0_FD_EXT, static_cast<EGLint>(dupFd),
+                    EGL_DMA_BUF_PLANE0_OFFSET_EXT, static_cast<EGLint>(attrs.offset[0]),
+                    EGL_DMA_BUF_PLANE0_PITCH_EXT, static_cast<EGLint>(attrs.pitch[0]),
+                    EGL_NONE,
+                };
+                image = display->createImage(EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT,
+                                             nullptr, attribs);
+                close(dupFd);
+            }
             if (image == EGL_NO_IMAGE_KHR) {
                 qCWarning(KWIN_ANLAND) << "linear import of buffer" << i
                                        << "failed: 0x" << Qt::hex << eglGetError()
