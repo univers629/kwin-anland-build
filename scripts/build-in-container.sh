@@ -62,13 +62,13 @@ fi
 # Only libkwin6 carries the backend this fork changes. Building the whole
 # source package also produces kwin-x11, kwin-wayland, kwin-dev and the
 # dbgsym packages, which together dwarf the one library that is installed on
-# a device. -B builds architecture-dependent packages only, and
-# noautodbgsym drops the debug symbols; the remaining packages are removed
-# after the build because dpkg-buildpackage has no per-package target.
+# a device. noautodbgsym drops the debug symbols, and
+# the remaining packages are removed after the build because
+# dpkg-buildpackage has no per-package target.
 log "building"
 cd "$TREE"
 DEB_BUILD_OPTIONS="nocheck parallel=$(nproc) noautodbgsym" \
-    dpkg-buildpackage -B -uc -us -d
+    dpkg-buildpackage -b -uc -us -d
 
 log "artifacts"
 find "$WORKDIR/$SRC_PKG" -maxdepth 1 -name '*.deb' -type f -printf '%p %s\n'
