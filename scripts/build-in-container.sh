@@ -68,7 +68,7 @@ fi
 log "building"
 cd "$TREE"
 DEB_BUILD_OPTIONS="nocheck parallel=$(nproc) noautodbgsym" \
-    dpkg-buildpackage -b -uc -us -d -B
+    dpkg-buildpackage -B -uc -us -d
 
 log "artifacts"
 find "$WORKDIR/$SRC_PKG" -maxdepth 1 -name '*.deb' -type f -printf '%p %s\n'
