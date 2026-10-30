@@ -221,6 +221,7 @@ bool AnlandEglLayer::importBuffers(int count)
         /* The importer resolves the modifier itself: an unspecified modifier
            lets it probe the linear layout, which is what the consumer
            allocated. */
+        eglGetError(); /* drop any error raised before this import */
         std::shared_ptr<GLTexture> texture;
 #ifdef ANLAND_KWIN_68
         texture = m_backend->openglContext()->importDmaBufAsTexture(attrs);
@@ -228,7 +229,8 @@ bool AnlandEglLayer::importBuffers(int count)
         texture = m_backend->importDmaBufAsTexture(attrs);
 #endif
         if (!texture) {
-            qCWarning(KWIN_ANLAND) << "failed to import dmabuf" << i << "as texture";
+            qCWarning(KWIN_ANLAND) << "failed to import dmabuf" << i << "as texture"
+                                   << "eglError" << Qt::hex << eglGetError();
             releaseBuffers();
             return false;
         }
