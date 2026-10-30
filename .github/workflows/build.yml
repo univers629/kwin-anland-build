@@ -1,0 +1,60 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      debian_suite:
+        description: Debian suite whose kwin source is built
+        required: false
+        default: trixie
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show host
+        run: |
+          uname -a
+          cat /etc/os-release
+          dpkg --print-architecture
+
+      - name: Run builder in a Debian container
+        env:
+          SUITE: ${{ github.event.inputs.debian_suite || 'trixie' }}
+        run: |
+          set -eux
+          docker run --rm \
+            -v "$PWD:/work" \
+            -w /work \
+            -e SUITE="$SUITE" \
+            -e DEBIAN_FRONTEND=noninteractive \
+            debian:"$SUITE" \
+            bash -c '
+              set -eux
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                build-essential devscripts equivs dpkg-dev patch \
+                ca-certificates curl xz-utils git
+              bash ./scripts/build-in-container.sh
+            '
+
+      - name: Collect artifacts
+        if: always()
+        run: |
+          mkdir -p out
+          find /work -maxdepth 4 -name '*.deb' -exec cp -v {} out/ \; || true
+          ls -la out || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kwin-anland-debs
+          path: out/*.deb
+          if-no-files-found: warn
