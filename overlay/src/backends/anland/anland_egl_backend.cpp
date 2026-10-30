@@ -218,6 +218,47 @@ bool AnlandEglLayer::importBuffers(int count)
                                << "fdSize" << fdSize
                                << "fdInfo" << fdInfo;
 
+        /* Diagnostic: import the same descriptor through a display created here
+           rather than the one the compositor owns. A different outcome proves
+           the failure is a property of that display, not of the buffer. */
+        {
+            EGLDisplay probeDisplay = eglGetPlatformDisplayEXT(
+                EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, nullptr);
+            if (probeDisplay != EGL_NO_DISPLAY) {
+                EGLint probeMajor = 0;
+                EGLint probeMinor = 0;
+                if (eglInitialize(probeDisplay, &probeMajor, &probeMinor)) {
+                    auto createImage = (PFNEGLCREATEIMAGEKHRPROC)
+                        eglGetProcAddress("eglCreateImageKHR");
+                    if (createImage) {
+                        const EGLint probeAttribs[] = {
+                            EGL_LINUX_DRM_FOURCC_EXT, static_cast<EGLint>(attrs.format),
+                            EGL_WIDTH, static_cast<EGLint>(attrs.width),
+                            EGL_HEIGHT, static_cast<EGLint>(attrs.height),
+                            EGL_DMA_BUF_PLANE0_FD_EXT, static_cast<EGLint>(attrs.fd[0].get()),
+                            EGL_DMA_BUF_PLANE0_OFFSET_EXT, static_cast<EGLint>(attrs.offset[0]),
+                            EGL_DMA_BUF_PLANE0_PITCH_EXT, static_cast<EGLint>(attrs.pitch[0]),
+                            EGL_NONE,
+                        };
+                        eglGetError();
+                        const EGLImage probeImage = createImage(
+                            probeDisplay, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT,
+                            nullptr, probeAttribs);
+                        qCWarning(KWIN_ANLAND) << "probe display import of buffer" << i
+                                               << "image" << (void *)probeImage
+                                               << "err" << Qt::hex << eglGetError();
+                        if (probeImage != EGL_NO_IMAGE_KHR) {
+                            auto destroyImage = (PFNEGLDESTROYIMAGEKHRPROC)
+                                eglGetProcAddress("eglDestroyImageKHR");
+                            if (destroyImage)
+                                destroyImage(probeDisplay, probeImage);
+                        }
+                    }
+                    eglTerminate(probeDisplay);
+                }
+            }
+        }
+
         /* The importer resolves the modifier itself: an unspecified modifier
            lets it probe the linear layout, which is what the consumer
            allocated. */
