@@ -222,8 +222,16 @@ bool AnlandEglLayer::importBuffers(int count)
            rather than the one the compositor owns. A different outcome proves
            the failure is a property of that display, not of the buffer. */
         {
-            EGLDisplay probeDisplay = eglGetPlatformDisplayEXT(
-                EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, nullptr);
+            auto getPlatformDisplay = (PFNEGLGETPLATFORMDISPLAYEXTPROC)
+                eglGetProcAddress("eglGetPlatformDisplayEXT");
+            EGLDisplay probeDisplay = EGL_NO_DISPLAY;
+            if (getPlatformDisplay) {
+                probeDisplay = getPlatformDisplay(
+                    EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, nullptr);
+            }
+            qCWarning(KWIN_ANLAND) << "probe setup for buffer" << i
+                                   << "proc" << (void *)getPlatformDisplay
+                                   << "display" << (void *)probeDisplay;
             if (probeDisplay != EGL_NO_DISPLAY) {
                 EGLint probeMajor = 0;
                 EGLint probeMinor = 0;
