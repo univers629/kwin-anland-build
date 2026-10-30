@@ -40,21 +40,26 @@ jobs:
               set -eux
               apt-get update
               apt-get install -y --no-install-recommends \
-                build-essential devscripts equivs dpkg-dev patch \
+                build-essential devscripts equivs dpkg-dev patch fakeroot \
                 ca-certificates curl xz-utils git
-              bash ./scripts/build-in-container.sh
+              bash ./scripts/build-in-container.sh 2>&1 | tee /work/build.log
             '
 
       - name: Collect artifacts
         if: always()
         run: |
+          set -eux
           mkdir -p out
-          find /work -maxdepth 4 -name '*.deb' -exec cp -v {} out/ \; || true
-          ls -la out || true
+          find "$PWD/build" -name '*.deb' -exec cp -v {} out/ \; || true
+          ls -la out
+          ls -la build 2>/dev/null || true
+          tail -80 build.log 2>/dev/null || true
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: kwin-anland-debs
-          path: out/*.deb
+          path: |
+            out/*.deb
+            build.log
           if-no-files-found: warn

@@ -66,3 +66,9 @@ DEB_BUILD_OPTIONS="nocheck parallel=$(nproc)" \
 
 log "artifacts"
 find "$WORKDIR/$SRC_PKG" -maxdepth 1 -name '*.deb' -type f -printf '%p %s\n'
+
+# dpkg-buildpackage leaves the packages next to the unpacked tree, not inside
+# it; a run that produced none must fail instead of uploading nothing.
+count="$(find "$WORKDIR/$SRC_PKG" -maxdepth 1 -name '*.deb' -type f | wc -l)"
+log "package count: $count"
+[ "$count" -gt 0 ] || { echo "no .deb produced"; exit 1; }
