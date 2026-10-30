@@ -63,3 +63,21 @@ jobs:
             out/*.deb
             build.log
           if-no-files-found: warn
+
+      # A release asset is reachable without a token, which the artifact
+      # download endpoint requires.
+      - name: Publish to release
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eux
+          shopt -s nullglob
+          debs=(out/*.deb)
+          [ ${#debs[@]} -gt 0 ] || { echo "no packages to publish"; exit 1; }
+          tag="build-$(date -u +%Y%m%d-%H%M%S)"
+          gh release create "$tag" "${debs[@]}" \
+            --repo "${{ github.repository }}" \
+            --title "$tag" \
+            --notes "kwin with the anland backend, built from ${{ github.sha }}."
+
