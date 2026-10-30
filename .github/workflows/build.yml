@@ -50,22 +50,13 @@ jobs:
         run: |
           set -eux
           mkdir -p out
-          find "$PWD/build" -name '*.deb' -exec cp -v {} out/ \; || true
+          find "$PWD/build" -name 'libkwin6_*.deb' -exec cp -v {} out/ \; || true
           ls -la out
-          ls -la build 2>/dev/null || true
-          tail -80 build.log 2>/dev/null || true
+          tail -40 build.log 2>/dev/null || true
 
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: kwin-anland-debs
-          path: |
-            out/*.deb
-            build.log
-          if-no-files-found: warn
-
-      # A release asset is reachable without a token, which the artifact
-      # download endpoint requires.
+      # The one library is the whole deliverable, so the release asset alone is
+      # enough; an artifact would only duplicate it behind an API that needs a
+      # token to download.
       - name: Publish to release
         if: success()
         env:
@@ -73,11 +64,11 @@ jobs:
         run: |
           set -eux
           shopt -s nullglob
-          debs=(out/*.deb)
-          [ ${#debs[@]} -gt 0 ] || { echo "no packages to publish"; exit 1; }
+          debs=(out/libkwin6_*.deb)
+          [ ${#debs[@]} -gt 0 ] || { echo "no package to publish"; exit 1; }
           tag="build-$(date -u +%Y%m%d-%H%M%S)"
           gh release create "$tag" "${debs[@]}" \
             --repo "${{ github.repository }}" \
             --title "$tag" \
-            --notes "kwin with the anland backend, built from ${{ github.sha }}."
+            --notes "libkwin6 with the anland backend, built from ${{ github.sha }}."
 

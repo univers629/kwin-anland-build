@@ -59,13 +59,24 @@ else
     exit 1
 fi
 
+# Only libkwin6 carries the backend this fork changes. Building the whole
+# source package also produces kwin-x11, kwin-wayland, kwin-dev and the
+# dbgsym packages, which together dwarf the one library that is installed on
+# a device. -B builds architecture-dependent packages only, and
+# noautodbgsym drops the debug symbols; the remaining packages are removed
+# after the build because dpkg-buildpackage has no per-package target.
 log "building"
 cd "$TREE"
-DEB_BUILD_OPTIONS="nocheck parallel=$(nproc)" \
-    dpkg-buildpackage -b -uc -us -d
+DEB_BUILD_OPTIONS="nocheck parallel=$(nproc) noautodbgsym" \
+    dpkg-buildpackage -b -uc -us -d -B
 
 log "artifacts"
 find "$WORKDIR/$SRC_PKG" -maxdepth 1 -name '*.deb' -type f -printf '%p %s\n'
+
+# Keep only libkwin6: nothing else is installed on the device, and shipping it
+# would inflate the artifact download for every iteration.
+find "$WORKDIR/$SRC_PKG" -maxdepth 1 -name '*.deb' -type f \
+    ! -name 'libkwin6_*' -delete
 
 # dpkg-buildpackage leaves the packages next to the unpacked tree, not inside
 # it; a run that produced none must fail instead of uploading nothing.
