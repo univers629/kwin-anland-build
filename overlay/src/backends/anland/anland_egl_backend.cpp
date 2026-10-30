@@ -171,14 +171,16 @@ bool AnlandEglLayer::importBuffers(int count)
         attrs.pitch[0] = static_cast<int>(fb.stride);
 
         /* The import below is the only place the buffer layout reaches EGL, so
-           the values are logged once per buffer to diagnose a rejected import. */
-        qCInfo(KWIN_ANLAND) << "importing buffer" << i
-                            << "size" << actual
-                            << "format" << Qt::hex << attrs.format
-                            << "modifier" << Qt::hex << (unsigned long long)attrs.modifier
-                            << "offset" << attrs.offset[0]
-                            << "pitch" << attrs.pitch[0]
-                            << "footprint" << fb.stride * fb.height;
+           the values are logged once per buffer to diagnose a rejected import.
+           Warning level: the default logging rules print warnings but drop
+           info, and a rejected import must be observable without extra setup. */
+        qCWarning(KWIN_ANLAND) << "importing buffer" << i
+                               << "size" << actual
+                               << "format" << Qt::hex << attrs.format
+                               << "modifier" << Qt::hex << (unsigned long long)attrs.modifier
+                               << "offset" << attrs.offset[0]
+                               << "pitch" << attrs.pitch[0]
+                               << "footprint" << fb.stride * fb.height;
 
         // EglBackend::importDmaBufAsTexture() builds the EGLImage and wraps it in
         // a GLTexture in one step (the 5.27-era manual EGLImageKHR +
