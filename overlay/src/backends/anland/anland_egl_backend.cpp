@@ -27,6 +27,7 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstdio>
 #include <sys/stat.h>
 
 #include "opengl/eglimagetexture.h"
@@ -190,6 +191,25 @@ bool AnlandEglLayer::importBuffers(int count)
            info, and a rejected import must be observable without extra setup. */
         struct stat fdStat;
         const long fdSize = (fstat(fb.fd, &fdStat) == 0) ? (long)fdStat.st_size : -1;
+        /* The exporting heap identifies whether the descriptor comes from the
+           same allocator this process uses. */
+        char fdInfo[256] = {};
+        {
+            char infoPath[64];
+            snprintf(infoPath, sizeof(infoPath), "/proc/self/fdinfo/%d", fb.fd);
+            const int infoFd = open(infoPath, O_RDONLY | O_CLOEXEC);
+            if (infoFd >= 0) {
+                const ssize_t got = read(infoFd, fdInfo, sizeof(fdInfo) - 1);
+                if (got > 0) {
+                    fdInfo[got] = '\0';
+                    for (ssize_t k = 0; k < got; ++k) {
+                        if (fdInfo[k] == '\n')
+                            fdInfo[k] = ' ';
+                    }
+                }
+                close(infoFd);
+            }
+        }
         qCWarning(KWIN_ANLAND) << "importing buffer" << i
                                << "size" << actual
                                << "format" << Qt::hex << attrs.format
@@ -198,7 +218,8 @@ bool AnlandEglLayer::importBuffers(int count)
                                << "pitch" << attrs.pitch[0]
                                << "footprint" << fb.stride * fb.height
                                << "fd" << fb.fd
-                               << "fdSize" << fdSize;
+                               << "fdSize" << fdSize
+                               << "fdInfo" << fdInfo;
 
         // EglBackend::importDmaBufAsTexture() always emits the plane modifier
         // attributes. The kgsl backend of Mesa accepts a dma-buf import without
