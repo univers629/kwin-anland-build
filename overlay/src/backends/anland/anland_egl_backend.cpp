@@ -210,6 +210,13 @@ bool AnlandEglLayer::importBuffers(int count)
                 EGL_NONE,
             };
             image = display->createImage(EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs);
+            if (image == EGL_NO_IMAGE_KHR) {
+                qCWarning(KWIN_ANLAND) << "linear import of buffer" << i
+                                       << "failed: 0x" << Qt::hex << eglGetError()
+                                       << "- falling back to the dmabuf path";
+            } else {
+                qCWarning(KWIN_ANLAND) << "linear import of buffer" << i << "succeeded";
+            }
         }
 
         std::shared_ptr<GLTexture> texture;
